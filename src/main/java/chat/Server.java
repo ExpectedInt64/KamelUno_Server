@@ -50,6 +50,7 @@ class ChatHandler{
         rooms++;
     }
 }
+
 class ChatRoom implements Runnable{
     private final SequentialSpace chat = new SequentialSpace();
     private final int roomId;
