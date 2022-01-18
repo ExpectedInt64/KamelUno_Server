@@ -32,22 +32,16 @@ public class LobbyManager implements Runnable{
                 switch (requestType){
                     case "createLobby":
                         // TODO: skal man kunne oprette en lobby med given id eller skal man bare oprette som næste ledig id.
-                        Object[] the_lobby = lobbies.queryp(new ActualField(requestArgument),new FormalField(Integer.class));
-                        if (the_lobby != null) {
-                            System.out.println("The lobby does exist. Sending error response.");
-                            server_LobbyManager.put(requestType,requestArgument,"else");
-                            server_LobbyManager.put(requestType,requestArgument,"koybbol");
-                        }else {
-                            lobbyURI = "tcp://127.0.0.1:9001/lobby" + lobbyID + "?keep";
-                            System.out.println("Setting up lobby space " + lobbyURI + "...");
-                            SequentialSpace lobby = new SequentialSpace();
-                            spaceRepository.add("lobby" + lobbyID, lobby);
-                            new Thread(new lobbyWaiter(lobby, lobbyID)).start();
-                            lobbies.put(""+lobbyID,1);
-                            lobbyID++;
-                            server_LobbyManager.put(requestType,requestArgument,"if");
-                            server_LobbyManager.put(requestType,requestArgument,"oklobby");
-                        }
+                        lobbyURI = "tcp://127.0.0.1:9001/lobby" + lobbyID + "?keep";
+                        System.out.println("Setting up lobby space " + lobbyURI + "...");
+                        SequentialSpace lobby = new SequentialSpace();
+                        spaceRepository.add("lobby" + lobbyID, lobby);
+                        new Thread(new lobbyWaiter(lobby, lobbyID)).start();
+                        lobbies.put(""+lobbyID,1);
+                        lobbyID++;
+                        server_LobbyManager.put(requestType,requestArgument,"if");
+                        server_LobbyManager.put(requestType,requestArgument,"oklobby");
+
                         break;
                     case "joinLobby":
                         Object[] the_lobby2 = lobbies.queryp(new ActualField(requestArgument),new FormalField(Integer.class));
