@@ -21,11 +21,9 @@ public class LobbyManager implements Runnable{
 
     @Override
     public void run() {
-
+        int lobbyID = 0;
+        String lobbyURI;
         while (true){
-            int lobbyID = 0;
-            String lobbyURI;
-
             try{
                 Object[] request = server_LobbyManager.get(new FormalField(String.class), new FormalField(String.class));
                 String requestType = (String) request[0];
@@ -33,6 +31,7 @@ public class LobbyManager implements Runnable{
                 System.out.println("Processing request at LobbyManager " + requestType + " -> " + requestArgument);
                 switch (requestType){
                     case "createLobby":
+                        // TODO: skal man kunne oprette en lobby med given id eller skal man bare oprette som næste ledig id.
                         Object[] the_lobby = lobbies.queryp(new ActualField(requestArgument),new FormalField(Integer.class));
                         if (the_lobby != null) {
                             System.out.println("The lobby does exist. Sending error response.");
@@ -44,7 +43,7 @@ public class LobbyManager implements Runnable{
                             SequentialSpace lobby = new SequentialSpace();
                             spaceRepository.add("lobby" + lobbyID, lobby);
                             new Thread(new lobbyWaiter(lobby, lobbyID)).start();
-                            lobbies.put(lobbyID,1);
+                            lobbies.put(""+lobbyID,1);
                             lobbyID++;
                             server_LobbyManager.put(requestType,requestArgument,"if");
                             server_LobbyManager.put(requestType,requestArgument,"oklobby");
@@ -65,19 +64,27 @@ public class LobbyManager implements Runnable{
                                 lobbies.put(updateLobby[0],increasesize);
 
                             }else{
-                                System.out.println("The lobby does exist. Sending error response.");
+                                System.out.println("The lobby is full. Sending error response.");
                                 server_LobbyManager.put(requestType,requestArgument,"else");
                                 server_LobbyManager.put(requestType,requestArgument,"koybbol");
                             }
                         }else{
-                            System.out.println("The lobby does exist. Sending error response.");
+                            System.out.println("The lobby "+ requestArgument +" does not exist. Sending error response.");
                             server_LobbyManager.put(requestType,requestArgument,"else");
                             server_LobbyManager.put(requestType,requestArgument,"koybbol");
                         }
                         break;
                     case "getLobbies":
-                        LinkedList<Object[]> lobbies = this.lobbies.queryAll(new FormalField(Integer.class), new FormalField(Integer.class));
-                        server_LobbyManager.put("getLobbies",lobbies);
+                        LinkedList<Object[]> lobbies = this.lobbies.queryAll(new FormalField(String.class), new FormalField(Integer.class));
+                        String[] list = new String[lobbies.size()];
+                        System.out.println(lobbies.size());
+                        for (int i = 0; i < lobbies.size(); i++) {
+                            String value = (String) lobbies.get(i)[0];
+                            System.out.println(value);
+                            list[i] = value;
+                        }
+
+                        server_LobbyManager.put("getLobbies",list);
                         break;
                     default:
 
@@ -86,8 +93,6 @@ public class LobbyManager implements Runnable{
             }catch (Exception e){
                 e.printStackTrace();
             }
-
-
         }
 
     }
@@ -112,9 +117,10 @@ class lobbyWaiter implements Runnable {
                 Object[] t = lobby.get(new FormalField(String.class), new FormalField(String.class));
                 String msg1 = (String) t[0];
                 String msg2 = (String) t[1];
-                if(msg2.equals("joined")){
-                    System.out.println("Lobby"+lobbyID+": "+msg1 + " has joined " + msg2);
-                    players.add(msg1);
+                if(msg1.equals("joined")){
+                    System.out.println("Lobby"+lobbyID+": "+msg2 + " has " + msg1);
+                    players.add(msg2);
+                    lobby.put(msg2,"has joined.");
                 }else{
                     System.out.println("Lobby"+lobbyID+": "+t[0] + ":" + t[1]);
                     for(String player : players){
