@@ -107,7 +107,7 @@ class lobbyWaiter implements Runnable {
     public lobbyWaiter(Space lobby,int lobbyID) {
         this.lobby = lobby;
         this.lobbyID = lobbyID;
-        this.players = new ArrayList<>();
+        this.players = new ArrayList<String>();
     }
 
     @Override
@@ -121,7 +121,11 @@ class lobbyWaiter implements Runnable {
                     System.out.println("Lobby"+lobbyID+": "+msg2 + " has " + msg1);
                     players.add(msg2);
                     lobby.put(msg2,"has joined.");
-                }else{
+                }else if (msg1.equals("getPlayers")){
+                    System.out.println("Lobby"+lobbyID+": get Players requested.");
+                    String[] listofplayers = players.toArray(String[]::new);
+                    lobby.put(listofplayers);
+                } else{
                     System.out.println("Lobby"+lobbyID+": "+t[0] + ":" + t[1]);
                     for(String player : players){
                         lobby.put(player, t[0], t[1]);
