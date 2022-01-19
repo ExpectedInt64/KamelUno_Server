@@ -14,6 +14,7 @@ import java.util.Map;
 General template: ("playerId", "command", "payload")
 
 SERVER TO CLIENT COMMANDS
+- (playerId, "allReady"): All players are ready to play
 - (playerId, "take", status): The player can take his turn, status tell if the game is done (winnerId or "alive")
 - (playerId, "players", String[]): A list of all the players in the correct game order
 - (playerId, "takes", playerId): A new player [1] has begun his turn
@@ -24,6 +25,7 @@ SERVER TO CLIENT COMMANDS
 
 
 CLIENT TO SERVER COMMANDS
+- (playerId, "ready"): The player is ready to begin the game
 - (playerId, "ended"): The players ends his turn
 - (playerId, "taken"): The players takes his turn
 - (playerId, "action", Action): The player performs an action (play or draw card)
@@ -113,6 +115,16 @@ public class GameHandler {
         
         // Send the player list to all the players
         sendPlayerList();
+
+        // Wait for all players to be ready
+        for (int i = 0; i < playerIds.length; i++) {
+            gameSpace.get(new FormalField(String.class), new ActualField("ready"));
+        }
+
+        // Notify players everyone is ready
+        for (int i = 0; i < playerIds.length; i++) {
+            gameSpace.put(playerIds[i], "allReady");
+        }
 
         // Notify first player to start
         gameSpace.put(playerIds[currentPlayer], "take", "alive");
@@ -474,7 +486,6 @@ public class GameHandler {
 
     // todo Call UNO
     // todo Call missing UNO (apply penalty)
-    // todo Update game board
 }
 
 // A template for a single card in the deck

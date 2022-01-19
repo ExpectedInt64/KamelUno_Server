@@ -113,6 +113,19 @@ class StartClient implements Runnable {
 
             TimeUnit.SECONDS.sleep(1);
 
+            // Notify server the thread is ready
+            gameSpace.put(playerId, "ready");
+
+            // Wait until all players are ready
+            gameSpace.get(
+                    new ActualField(playerId),
+                    new ActualField("allReady")
+            );
+
+            systemSpace.get(new ActualField("lock"));
+            System.out.println("\nAll players are ready");
+            systemSpace.put("lock");
+
             // Play the game until a winner is found
             while (true)
                 if (!takeTurn()) break;
