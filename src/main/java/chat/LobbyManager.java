@@ -148,10 +148,11 @@ class lobbyWaiter implements Runnable {
                     for (int i = 0; i < players.size(); i++) {
                         listOfPlayers[i] = players.get(i);
                     }
-                    new GameHandler(spaceRepository, gameSpace,listOfPlayers);
+                    //TODO: Kør gamehandler på en tråd
+                    //new GameHandler(spaceRepository, gameSpace,listOfPlayers);
 
                     for (String player : players) {
-                        lobby.put(player, "System", "Go!", "");
+                        lobby.put(player, "System", "Go!","");
                     }
 
                 } else {
