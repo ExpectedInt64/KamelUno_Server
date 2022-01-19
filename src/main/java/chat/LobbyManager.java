@@ -149,7 +149,10 @@ class lobbyWaiter implements Runnable {
                         listOfPlayers[i] = players.get(i);
                     }
                     new GameHandler(spaceRepository, gameSpace,listOfPlayers);
-                    lobby.put(msg1,"go!");
+
+                    for (String player : players) {
+                        lobby.put(player, "System", "Go!", "");
+                    }
 
                 } else {
                     System.out.println("Lobby" + lobbyID + ": " + t[0] + ":" + t[1]);
