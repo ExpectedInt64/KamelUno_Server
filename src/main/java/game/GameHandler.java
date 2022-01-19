@@ -8,14 +8,15 @@ import java.util.HashMap;
 import java.util.Map;
 
 // todo the players should always listen for a missing UNO penalty
+// todo only begin when all players are ready
 
 /*
 General template: ("playerId", "command", "payload")
 
 SERVER TO CLIENT COMMANDS
-- (playerId, "take"): The player can take his turn
+- (playerId, "take", status): The player can take his turn, status tell if the game is done (winnerId or "alive")
 - (playerId, "players", String[]): A list of all the players in the correct game order
-- (playerId, playerId, "takes"): A new player [1] has begun his turn
+- (playerId, "takes", playerId): A new player [1] has begun his turn
 - (playerId, "cards", Card[]): An array of card is ready for the player to draw
 - (playerId, "invalid"): The played card was invalid
 - (playerId, "success": The card was played successfully
@@ -46,7 +47,6 @@ public class GameHandler {
     int penalty = 0;  // The amount of penalty the next player is going to receive
     boolean turnDone = false;  // A player only gets one action per turn (draw or play a card)
     Map<String, ArrayList<Card>> hands = new HashMap<>();  // To keep track of what cards each player has on his hand
-    SequentialSpace debug = new SequentialSpace();  // Space where client can request instance variables for debug
 
     // Constructor
     public GameHandler(SpaceRepository gameRepository, SequentialSpace gameSpace, String[] playerIds) throws InterruptedException {
@@ -54,9 +54,6 @@ public class GameHandler {
         this.playerIds = playerIds;
         this.gameSpace = gameSpace;
         this.gameRepository = gameRepository;
-
-        // Make game-space available to players
-        gameRepository.add("debug", debug);
 
         // Needed before manipulating shared variables
         gameSpace.put("lock");
@@ -118,7 +115,7 @@ public class GameHandler {
         sendPlayerList();
 
         // Notify first player to start
-        gameSpace.put(playerIds[currentPlayer], "take");
+        gameSpace.put(playerIds[currentPlayer], "take", "alive");
     }
 
     private void sendPlayerList() throws InterruptedException {
@@ -128,7 +125,6 @@ public class GameHandler {
     }
 
     private void listen() throws InterruptedException {
-        new Thread(new Debug(debug, this)).start();
 
         while(true){
             takeTurn();
@@ -137,8 +133,28 @@ public class GameHandler {
             while (true)
                 if(takeAction()) break;
 
+            // Check if game is done
+            if (isGameDone()) break;
+
             nextPlayer();
         }
+    }
+
+    private boolean isGameDone() throws InterruptedException {
+
+        // Check all players' hand
+        for (Map.Entry<String, ArrayList<Card>> entry : hands.entrySet()) {
+
+            // If a player has won end the game and notify
+            if (entry.getValue().size() == 0) {
+                for (int i = 0; i < playerIds.length; i++) {
+                    gameSpace.put(playerIds[i], "take", entry.getKey());
+                }
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // Take turn (apply penalty)
@@ -155,7 +171,7 @@ public class GameHandler {
 
         // Notify other players who took turn
         for (int i = 0; i < playerIds.length; i++) {
-            gameSpace.put(playerIds[i], playerId, "takes");
+            gameSpace.put(playerIds[i], "takes", playerId);
         }
 
         // Apply penalty if any
@@ -232,7 +248,7 @@ public class GameHandler {
         turnDone = false;
 
         // Notify next player to start
-        gameSpace.put(playerIds[currentPlayer], "take");
+        gameSpace.put(playerIds[currentPlayer], "take", "alive");
     }
 
     // Play a card (disable UNO, save penalty, respond with status)
@@ -268,8 +284,9 @@ public class GameHandler {
             else penalty = 2;
         }
 
-        // Notify players of change
-        sendBoard();
+        // Notify players of change in board if game is not done
+        if (!isGameDone())
+            sendBoard();
 
         // Respond with success
         gameSpace.put(playerId, "success");
@@ -582,7 +599,12 @@ class Debug implements Runnable {
 
 class Server {
     public static void main(String[] args) throws InterruptedException, IOException {
-        //new GameHandler("gameId", new SequentialSpace(), new String[]{"Bob", "Alice"});
+        SpaceRepository spaceRepository = new SpaceRepository();
+        spaceRepository.addGate("tcp://localhost:31415/?keep");
+        SequentialSpace gameSpace = new SequentialSpace();
+        spaceRepository.add("gameId", gameSpace);
+
+        new GameHandler(spaceRepository, gameSpace, new String[]{"Mark", "Talha", "Volkan", "Mikkel"});
     }
 }
 
