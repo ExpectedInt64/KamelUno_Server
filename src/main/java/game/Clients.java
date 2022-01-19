@@ -40,7 +40,21 @@ class Alice {
     }
 }
 
-class StartClient implements Runnable{
+class Charlie {
+    public static void main(String[] args) throws IOException, InterruptedException {
+        RemoteSpace gameSpace = new RemoteSpace("tcp://localhost:31415/gameId?keep");
+        RemoteSpace debug = new RemoteSpace("tcp://localhost:31415/debug?keep");
+        SequentialSpace systemSpace = new SequentialSpace();  // To coordinate threads access to system out
+
+        // Only one thread at a time should have access to system out
+        systemSpace.put("lock");
+
+        // Start client
+        new Thread(new StartClient(gameSpace, debug, systemSpace, "Charlie")).start();
+    }
+}
+
+class StartClient implements Runnable {
 
     RemoteSpace gameSpace;
     RemoteSpace debugSpace;
@@ -75,26 +89,46 @@ class StartClient implements Runnable{
             TimeUnit.SECONDS.sleep(1);
 
             // Threads to update TUI
-            new Thread(new ClientBoard(playerId, gameSpace, systemSpace)).start();
-            new Thread(new ClientHand(playerId, gameSpace, systemSpace)).start();
-            new Thread(new TurnWatcher(playerId, gameSpace, systemSpace)).start();
+            Thread t1 = new Thread(new ClientBoard(playerId, gameSpace, systemSpace));
+            Thread t2 = new Thread(new ClientHand(playerId, gameSpace, systemSpace));
+            Thread t3 = new Thread(new TurnWatcher(playerId, gameSpace, systemSpace));
+
+            t1.start();
+            t2.start();
+            t3.start();
 
             TimeUnit.SECONDS.sleep(1);
 
-            while (true) takeTurn();
+            // Play the game until a winner is found
+            while (true)
+                if (!takeTurn()) break;
+
+            t1.stop();
+            t2.stop();
+            t3.stop();
 
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
     }
 
-    private void takeTurn() throws InterruptedException {
+    // Return true if game is still going
+    private boolean takeTurn() throws InterruptedException {
 
         // Wait for my turn
-        gameSpace.get(
+        String status = (String) gameSpace.get(
                 new ActualField(playerId),
-                new ActualField("take")
-        );
+                new ActualField("take"),
+                new FormalField(String.class)
+        )[2];
+
+        //Check if game is done
+        if (!status.equals("alive")) {
+            systemSpace.get(new ActualField("lock"));
+            System.out.println("\nThe Winner is: " + status + "!");
+            systemSpace.put("lock");
+            return false;
+        }
 
         systemSpace.get(new ActualField("lock"));
         System.out.println("\nEnter to begin");
@@ -109,6 +143,8 @@ class StartClient implements Runnable{
 
         // End turn
         gameSpace.put(playerId, "ended");
+
+        return true;
     }
 
     private void doAction() throws InterruptedException {
@@ -269,9 +305,9 @@ class TurnWatcher implements Runnable {
             while (true) {
                 String player = (String) gameSpace.get(
                         new ActualField(playerId),
-                        new FormalField(String.class),
-                        new ActualField("takes")
-                )[1];
+                        new ActualField("takes"),
+                        new FormalField(String.class)
+                )[2];
 
                 System.out.print("");
 
