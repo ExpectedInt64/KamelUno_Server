@@ -53,7 +53,7 @@ public class LobbyManager implements Runnable {
                         if (the_lobby2 != null) {
                             System.out.println("The lobby is found sending URL");
                             int numOfPlayer = (int) the_lobby2[1];
-                            if (numOfPlayer <= 4) {
+                            if (numOfPlayer < 5) {
                                 lobbyURI = "tcp://127.0.0.1:9001/lobby" + the_lobby2[0] + "?keep";
                                 server_LobbyManager.put(requestType, requestArgument, "if");
                                 server_LobbyManager.put(requestType, requestArgument, "oklobby");
