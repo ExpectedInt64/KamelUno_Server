@@ -1,6 +1,7 @@
 package chat;
 import org.jspace.*;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedList;
 
 public class LobbyManager implements Runnable {
@@ -130,7 +131,8 @@ class lobbyWaiter implements Runnable {
                 } else if (msg1.equals("getPlayers")) {
                     System.out.println("Lobby" + lobbyID + ": get Players requested.");
                     String[] listofplayers = players.toArray(String[]::new);
-                    lobby.put(listofplayers);
+                    System.out.println(Arrays.toString(listofplayers));
+                    lobby.put(Arrays.toString(listofplayers));
                 } else if(msg1.equals("initGame")){
                     System.out.println("Lobby" + lobbyID + ": initGame requested. Starting gameHandler in a thread.");
                     SequentialSpace gameSpace = new SequentialSpace();
