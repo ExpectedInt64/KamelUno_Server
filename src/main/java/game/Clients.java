@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit;
 
 public class Clients {}
 
-class Bob {
+class Mark {
     public static void main(String[] args) throws IOException, InterruptedException {
         RemoteSpace gameSpace = new RemoteSpace("tcp://localhost:31415/gameId?keep");
         RemoteSpace debug = new RemoteSpace("tcp://localhost:31415/debug?keep");
@@ -22,11 +22,11 @@ class Bob {
         systemSpace.put("lock");
 
         // Start client
-        new Thread(new StartClient(gameSpace, debug, systemSpace, "Bob")).start();
+        new Thread(new StartClient(gameSpace, debug, systemSpace, "Mark")).start();
     }
 }
 
-class Alice {
+class Talha {
     public static void main(String[] args) throws IOException, InterruptedException {
         RemoteSpace gameSpace = new RemoteSpace("tcp://localhost:31415/gameId?keep");
         RemoteSpace debug = new RemoteSpace("tcp://localhost:31415/debug?keep");
@@ -36,11 +36,11 @@ class Alice {
         systemSpace.put("lock");
 
         // Start client
-        new Thread(new StartClient(gameSpace, debug, systemSpace, "Alice")).start();
+        new Thread(new StartClient(gameSpace, debug, systemSpace, "Talha")).start();
     }
 }
 
-class Charlie {
+class Volkan {
     public static void main(String[] args) throws IOException, InterruptedException {
         RemoteSpace gameSpace = new RemoteSpace("tcp://localhost:31415/gameId?keep");
         RemoteSpace debug = new RemoteSpace("tcp://localhost:31415/debug?keep");
@@ -50,7 +50,21 @@ class Charlie {
         systemSpace.put("lock");
 
         // Start client
-        new Thread(new StartClient(gameSpace, debug, systemSpace, "Charlie")).start();
+        new Thread(new StartClient(gameSpace, debug, systemSpace, "Volkan")).start();
+    }
+}
+
+class Mikkel {
+    public static void main(String[] args) throws IOException, InterruptedException {
+        RemoteSpace gameSpace = new RemoteSpace("tcp://localhost:31415/gameId?keep");
+        RemoteSpace debug = new RemoteSpace("tcp://localhost:31415/debug?keep");
+        SequentialSpace systemSpace = new SequentialSpace();  // To coordinate threads access to system out
+
+        // Only one thread at a time should have access to system out
+        systemSpace.put("lock");
+
+        // Start client
+        new Thread(new StartClient(gameSpace, debug, systemSpace, "Mikkel")).start();
     }
 }
 

@@ -9,7 +9,6 @@ import java.util.Map;
 
 // todo the players should always listen for a missing UNO penalty
 // todo only begin when all players are ready
-// Test 4 players
 
 /*
 General template: ("playerId", "command", "payload")
@@ -48,7 +47,6 @@ public class GameHandler {
     int penalty = 0;  // The amount of penalty the next player is going to receive
     boolean turnDone = false;  // A player only gets one action per turn (draw or play a card)
     Map<String, ArrayList<Card>> hands = new HashMap<>();  // To keep track of what cards each player has on his hand
-    SequentialSpace debug = new SequentialSpace();  // Space where client can request instance variables for debug
 
     // Constructor
     public GameHandler(SpaceRepository gameRepository, SequentialSpace gameSpace, String[] playerIds) throws InterruptedException {
@@ -56,9 +54,6 @@ public class GameHandler {
         this.playerIds = playerIds;
         this.gameSpace = gameSpace;
         this.gameRepository = gameRepository;
-
-        // Make game-space available to players
-        gameRepository.add("debug", debug);
 
         // Needed before manipulating shared variables
         gameSpace.put("lock");
@@ -130,7 +125,6 @@ public class GameHandler {
     }
 
     private void listen() throws InterruptedException {
-        // new Thread(new Debug(debug, this));
 
         while(true){
             takeTurn();
@@ -605,7 +599,12 @@ class Debug implements Runnable {
 
 class Server {
     public static void main(String[] args) throws InterruptedException, IOException {
-        //new GameHandler("gameId", new SequentialSpace(), new String[]{"Bob", "Alice", "Charlie"});
+        SpaceRepository spaceRepository = new SpaceRepository();
+        spaceRepository.addGate("tcp://localhost:31415/?keep");
+        SequentialSpace gameSpace = new SequentialSpace();
+        spaceRepository.add("gameId", gameSpace);
+
+        new GameHandler(spaceRepository, gameSpace, new String[]{"Mark", "Talha", "Volkan", "Mikkel"});
     }
 }
 
