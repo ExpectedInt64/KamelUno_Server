@@ -32,7 +32,7 @@ CLIENT TO SERVER COMMANDS
 // Given a game-space this class handles it for the players
 public class GameHandler {
 
-    SpaceRepository gameRepository = new SpaceRepository(); // The repository through which the players communicate
+    SpaceRepository gameRepository; // The repository through which the players communicate
     SequentialSpace gameSpace; // The space through which the players communicate
 
     String[] playerIds;  // List of all the player's ids
@@ -49,15 +49,14 @@ public class GameHandler {
     SequentialSpace debug = new SequentialSpace();  // Space where client can request instance variables for debug
 
     // Constructor
-    public GameHandler(String gameId, SequentialSpace gameSpace, String[] playerIds) throws InterruptedException {
+    public GameHandler(SpaceRepository gameRepository, SequentialSpace gameSpace, String[] playerIds) throws InterruptedException {
 
         this.playerIds = playerIds;
         this.gameSpace = gameSpace;
+        this.gameRepository = gameRepository;
 
         // Make game-space available to players
-        gameRepository.add(gameId, this.gameSpace);
         gameRepository.add("debug", debug);
-        gameRepository.addGate("tcp://localhost:31415/?keep");
 
         // Needed before manipulating shared variables
         gameSpace.put("lock");
@@ -583,7 +582,7 @@ class Debug implements Runnable {
 
 class Server {
     public static void main(String[] args) throws InterruptedException, IOException {
-        new GameHandler("gameId", new SequentialSpace(), new String[]{"Bob", "Alice"});
+        //new GameHandler("gameId", new SequentialSpace(), new String[]{"Bob", "Alice"});
     }
 }
 

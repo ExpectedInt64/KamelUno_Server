@@ -1,4 +1,5 @@
 package chat;
+import game.GameHandler;
 import org.jspace.*;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -124,21 +125,32 @@ class lobbyWaiter implements Runnable {
                 Object[] t = lobby.get(new FormalField(String.class), new FormalField(String.class));
                 String msg1 = (String) t[0];
                 String msg2 = (String) t[1];
+
                 if (msg1.equals("joined")) {
+
                     System.out.println("Lobby" + lobbyID + ": " + msg2 + " has " + msg1);
                     players.add(msg2);
                     lobby.put(msg2, "has joined.");
+
                 } else if (msg1.equals("getPlayers")) {
+
                     System.out.println("Lobby" + lobbyID + ": get Players requested.");
                     String[] listofplayers = players.toArray(String[]::new);
                     System.out.println(Arrays.toString(listofplayers));
                     lobby.put(Arrays.toString(listofplayers));
+
                 } else if(msg1.equals("initGame")){
+
                     System.out.println("Lobby" + lobbyID + ": initGame requested. Starting gameHandler in a thread.");
                     SequentialSpace gameSpace = new SequentialSpace();
                     spaceRepository.add("game"+lobbyID,gameSpace);
-                    //TODO: Her skal gameHandler starte.
+                    String[] listOfPlayers = new String[players.size()];
+                    for (int i = 0; i < players.size(); i++) {
+                        listOfPlayers[i] = players.get(i);
+                    }
+                    new GameHandler(spaceRepository, gameSpace,listOfPlayers);
                     lobby.put(msg1,"go!");
+
                 } else {
                     System.out.println("Lobby" + lobbyID + ": " + t[0] + ":" + t[1]);
                     for (String player : players) {
