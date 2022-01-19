@@ -7,38 +7,30 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
-// todo what if deck is empty
 // todo the players should always listen for a missing UNO penalty
-// todo the players should always listen for new cards to draw
-// todo the players should always updates to the board (like new stack card)
-
-// todo as of now a player can always draw a card, even if a play action is available.
-//  This means a player can potentially keep drawing cards and the game can end up in unstable situations
-
-// todo notify player every time gameboard updates
-
-// todo Send rækkefølgen med
-
 
 /*
 General template: ("playerId", "command", "payload")
 
 SERVER TO CLIENT COMMANDS
-- (playerId, "start"): The player can take his turn
-- (playerId, "card", Card): A card is ready for the player to draw
+- (playerId, "take"): The player can take his turn
+- (playerId, "players", String[]): A list of all the players in the correct game order
+- (playerId, playerId, "takes"): A new player [1] has begun his turn
+- (playerId, "cards", Card[]): An array of card is ready for the player to draw
 - (playerId, "invalid"): The played card was invalid
 - (playerId, "success": The card was played successfully
 - (playerId, "board", Board): The board was updated
 
+
 CLIENT TO SERVER COMMANDS
-- (playerId, "end"): The players ends his turn
-- (playerId, "begin"): The players takes his turn
+- (playerId, "ended"): The players ends his turn
+- (playerId, "taken"): The players takes his turn
 - (playerId, "action", Action): The player performs an action (play or draw card)
  */
 
 
 // Given a game-space this class handles it for the players
-public class Handler {
+public class GameHandler {
 
     SpaceRepository gameRepository = new SpaceRepository(); // The repository through which the players communicate
     SequentialSpace gameSpace; // The space through which the players communicate
@@ -53,16 +45,18 @@ public class Handler {
     boolean skipNextPlayer = false;  // True if a skip card has been played and the next player should be skipped
     int penalty = 0;  // The amount of penalty the next player is going to receive
     boolean turnDone = false;  // A player only gets one action per turn (draw or play a card)
-    Map<String, ArrayList<Card>> hands;  // To keep track of what cards each player has on his hand
+    Map<String, ArrayList<Card>> hands = new HashMap<>();  // To keep track of what cards each player has on his hand
+    SequentialSpace debug = new SequentialSpace();  // Space where client can request instance variables for debug
 
     // Constructor
-    public Handler(String gameId, SequentialSpace gameSpace, String[] playerIds) throws InterruptedException {
+    public GameHandler(String gameId, SequentialSpace gameSpace, String[] playerIds) throws InterruptedException {
 
         this.playerIds = playerIds;
         this.gameSpace = gameSpace;
 
         // Make game-space available to players
         gameRepository.add(gameId, this.gameSpace);
+        gameRepository.add("debug", debug);
         gameRepository.addGate("tcp://localhost:31415/?keep");
 
         // Needed before manipulating shared variables
@@ -115,45 +109,72 @@ public class Handler {
         // Provide players with cards
         for (int i = 0; i < playerIds.length; i++) {
             hands.put(playerIds[i], new ArrayList<>());
-            sendRandomCards(playerIds[i], 7);
+            givePlayerCards(playerIds[i], 7);
         }
 
-        // Send the board for the players to display
+        // Send the board to all the players to display
         sendBoard();
+        
+        // Send the player list to all the players
+        sendPlayerList();
 
         // Notify first player to start
-        gameSpace.put(playerIds[currentPlayer], "start");
+        gameSpace.put(playerIds[currentPlayer], "take");
+    }
+
+    private void sendPlayerList() throws InterruptedException {
+        for (int i = 0; i < playerIds.length; i++) {
+            gameSpace.put(playerIds[i], "players", playerIds);
+        }
     }
 
     private void listen() throws InterruptedException {
+        new Thread(new Debug(debug, this)).start();
+
         while(true){
             takeTurn();
-            takeAction();
+
+            // Listen for input action
+            while (true)
+                if(takeAction()) break;
+
             nextPlayer();
         }
     }
 
     // Take turn (apply penalty)
     private void takeTurn() throws InterruptedException {
-        String playerId = (String) gameSpace.get(new FormalField(String.class), new ActualField("begin"))[0];
+
+        // Wait for player to take turn
+        String playerId = (String) gameSpace.get(
+                new FormalField(String.class),
+                new ActualField("taken")
+        )[0];
 
         // Check playerId
         if (!isCurrentPlayer(playerId)) return;
 
-        // Apply penalty  if any
+        // Notify other players who took turn
+        for (int i = 0; i < playerIds.length; i++) {
+            gameSpace.put(playerIds[i], playerId, "takes");
+        }
+
+        // Apply penalty if any
         if (penalty > 0) {
-            sendRandomCards(playerId, penalty);
+            givePlayerCards(playerId, penalty);
             penalty = 0;
 
-            // Update player's board
             sendBoard();
         }
     }
 
-    private void takeAction() throws InterruptedException {
-        // A player can only do one action per turn
-        if (turnDone) return;
+    // Allow a player to take actions (draw or play a card)
+    // Returns true with success
+    private boolean takeAction() throws InterruptedException {
 
+        boolean success = false;
+
+        // Listen for action
         Object[] request = gameSpace.get(
                 new FormalField(String.class),
                 new ActualField("action"),
@@ -163,26 +184,34 @@ public class Handler {
         String playerId = (String) request[0];
         Action action = (Action) request[2];
 
-        // Check playerId
-        if (!isCurrentPlayer(playerId)) return;
+        // The current player can only do one action per turn and only
+        if (turnDone || !isCurrentPlayer(playerId)) {
+            gameSpace.put(playerId, "invalid");
+            return false;
+        };
 
         // If a card was played
         if (action.getAction().equals(Actions.PLAY))
-            playACard(playerId, action.getCard());
+            success = playACard(playerId, action.getCard());
 
         // If the player chose to draw a card
         if (action.getAction().equals(Actions.DRAW))
-            drawACard(playerId);
+            success = drawACard(playerId);
 
-        // Disable possibility for more actions
-        turnDone = true;
+        if (success) {
+            // Disable possibility for more actions
+            turnDone = true;
+            return true;
+        }
+
+        return false;
     }
 
     // Notify next player (increment currentPlayer and previousPlayer)
     private void nextPlayer() throws InterruptedException {
 
         // Wait for the current player to end his turn
-        String playerId = (String) gameSpace.get(new FormalField(String.class), new ActualField("end"))[0];
+        String playerId = (String) gameSpace.get(new FormalField(String.class), new ActualField("ended"))[0];
 
         // Check playerId
         if (!isCurrentPlayer(playerId)) return;
@@ -204,16 +233,17 @@ public class Handler {
         turnDone = false;
 
         // Notify next player to start
-        gameSpace.put(playerIds[currentPlayer], "start");
+        gameSpace.put(playerIds[currentPlayer], "take");
     }
 
     // Play a card (disable UNO, save penalty, respond with status)
-    private void playACard(String playerId, Card card) throws InterruptedException {
+    // Returns true with success
+    private boolean playACard(String playerId, Card card) throws InterruptedException {
 
         // Check the move is valid
         if (!isMoveValid(card) || !isPlayersCard(playerId, card)) {
             gameSpace.put(playerId, "invalid");
-            return;
+            return false;
         }
 
         // Add the card to the stack
@@ -244,10 +274,11 @@ public class Handler {
 
         // Respond with success
         gameSpace.put(playerId, "success");
+        return true;
     }
 
     // Removes a card from a player's hand
-    private void removeCardFromPlayer(String playerId, Card card) {
+    private void removeCardFromPlayer(String playerId, Card card) throws InterruptedException {
         ArrayList<Card> playerHand = hands.get(playerId);
 
         // Loop through cards on player's hand to find match
@@ -279,23 +310,37 @@ public class Handler {
 
     // Send the board to all the players
     private void sendBoard() throws InterruptedException {
+        Board board = getBoard();
 
-        Card topCard = (Card) stack.queryp(new FormalField(Card.class))[0];
+        // Send the new board and the players' hand to everyone
+        for (int i = 0; i < playerIds.length; i++) {
+            gameSpace.put(playerIds[i], "board", board);
+            gameSpace.put(playerIds[i], "cards", arraylistToArray(hands.get(playerIds[i])));
+        }
+    }
+
+    public Board getBoard() {
+
+        Card topCard = getTopCard();
 
         // Count number of cards on each player's hand
         Map<String, Integer> handsCount = new HashMap<>();
         for (Map.Entry<String, ArrayList<Card>> entry : hands.entrySet())
             handsCount.put(entry.getKey(), entry.getValue().size());
 
-        Board board = new Board(topCard, handsCount);
-
-        // Send the new board to the players
-        for (int i = 0; i < playerIds.length; i++)
-            gameSpace.put(playerIds[i], "board", board);
+        return new Board(topCard, handsCount);
     }
 
     // Allow a player to draw a random card from the deck
-    private void drawACard(String playerId) throws InterruptedException {
+    // Returns true with success
+    private boolean drawACard(String playerId) throws InterruptedException {
+
+        // Only allow a player to draw a card if the player has no valid moves
+        if (playerHasMoves(playerId)) {
+            gameSpace.put(playerId, "invalid");
+            return false;
+        }
+
         Card card = getRandomCardFromDeck();
 
         // Send card to player
@@ -304,17 +349,46 @@ public class Handler {
         // Add card to players hans
         hands.get(playerId).add(card);
 
-        // Notify players of change
+        // Notify other players of change
         sendBoard();
+
+        // Respond with success
+        gameSpace.put(playerId, "success");
+        return true;
+    }
+
+    private boolean playerHasMoves(String playerId) {
+        ArrayList<Card> hand = hands.get(playerId);
+
+        // Check for valid moves
+        for (int i = 0; i < hand.size(); i++) {
+            if (isMoveValid(hand.get(i)))
+                return true;
+        }
+
+        return false;
     }
 
     // Sends a certain amount of random cards to a player drawn from the deck
-    private void sendRandomCards(String playerId, int numberOfCards) throws InterruptedException {
+    private void givePlayerCards(String playerId, int numberOfCards) throws InterruptedException {
+        Card[] cards = new Card[numberOfCards];
+
         for (int i = 0; i < numberOfCards; i++) {
             Card card = getRandomCardFromDeck();
-            gameSpace.put(playerId, "card", card);
+            cards[i] = card;
             hands.get(playerId).add(card);
         }
+    }
+
+    private Card[] arraylistToArray(ArrayList<Card> list) {
+        Card[] cards = new Card[list.size()];
+
+        // Loop through cards
+        for (int i = 0; i < list.size(); i++) {
+            cards[i] = list.get(i);
+        }
+
+        return cards;
     }
 
     // Draw a random card from the deck
@@ -334,9 +408,12 @@ public class Handler {
     // Check is a certain move is valid
     private boolean isMoveValid(Card card) {
 
-        Card topCard = (Card) stack.queryp(new FormalField(Card.class))[0];
+        Card topCard = getTopCard();
 
-        // If the card is black, the move is always valid
+        // If the top card is black, the move is always valid
+        if (topCard.color.equals("Black")) return true;
+
+        // If the play card is black, the move is always valid
         if (card.color.equals("Black")) return true;
 
         // If the colors match, the move is valid
@@ -347,6 +424,10 @@ public class Handler {
 
         // Else the move is invalid
         return false;
+    }
+
+    private Card getTopCard() {
+        return (Card) stack.queryp(new FormalField(Card.class))[0];
     }
 
     // Only one at a time is allowed access to the gameSpace through mutualExclusion
@@ -364,7 +445,7 @@ public class Handler {
     private void flipTheStack() throws InterruptedException {
 
         // Save the top card to keep in stack
-        Card topCard = (Card) stack.getp(new FormalField(Card.class))[0];
+        Card topCard = getTopCard();
 
         // Get the others cards from the stack and add them back to the deck
         while(stack.size() > 0) {
@@ -375,11 +456,9 @@ public class Handler {
         stack.put(topCard);
     }
 
-    // Call UNO
-
-    // Call missing UNO (apply penalty)
-
-    // Update game board
+    // todo Call UNO
+    // todo Call missing UNO (apply penalty)
+    // todo Update game board
 }
 
 // A template for a single card in the deck
@@ -431,40 +510,80 @@ class Board {
     }
 
     public Card getTopCard() { return topCard; }
-    public Map<String, Integer> getPlayerHands() { return hands; }
+    public Map<String, Integer> getHands() { return hands; }
+
+    public void setTopCard(Card topCard) { this.topCard = topCard; }
 }
 
-class run {
-    public static void main(String[] args) throws InterruptedException, IOException {
-        new Handler("gameId", new SequentialSpace(), new String[]{"Mikkel", "Volkan"});
+// Listen for request for instance variables and responds with them
+class Debug implements Runnable {
 
-        RemoteSpace gameSpace = new RemoteSpace("tcp://localhost:31415/gameId?keep");
-//        new Thread(new Alice(gameSpace)).start();
+    SequentialSpace debug;
+    GameHandler handler;
 
-    }
-}
-
-class Alice implements Runnable {
-    RemoteSpace gameSpace;
-
-    public Alice(RemoteSpace gameSpace) {
-        this.gameSpace = gameSpace;
+    public Debug(SequentialSpace debug, GameHandler handler) {
+        this.debug = debug;
+        this.handler = handler;
     }
 
     @Override
     public void run() {
+        try {
+            while (true) {
 
-        while (true) {
-            try {
-                Card msg = (Card) gameSpace.get(
-                        new ActualField("Mikkel"),
-                        new FormalField(Card.class)
-                )[1];
-                System.out.println(msg.color + " " + msg.value);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
+                // Listen for request
+                Object[] request = debug.get(
+                        new FormalField(String.class),
+                        new FormalField(String.class)
+                );
+
+                String playerId = (String) request[0];
+                String command = (String) request[1];
+
+                if (command.equals("board"))
+                    debug.put(playerId, handler.getBoard());
+
+                if (command.equals("hands")) {
+
+                    // Convert handler.hands to traditional Array for jSpace
+                    // Find the longest hand in hands
+                    int record = 0;
+                    for (Map.Entry<String, ArrayList<Card>> entry : handler.hands.entrySet()) {
+                        if (entry.getValue().size() > 0)
+                            record = entry.getValue().size();
+                    }
+
+                    // One row per player and enough columns for playerIds and all cards
+                    String[][] hands = new String[handler.hands.size()][record + 1];
+
+                    // Start rows with playerIds
+                    for (int i = 0; i < handler.hands.size(); i++) {
+                        hands[i][0] = handler.playerIds[i];
+                    }
+
+                    // Do the mapping
+                    int counter = 0;
+                    for (Map.Entry<String, ArrayList<Card>> entry : handler.hands.entrySet()) {
+                        ArrayList<Card> hand = entry.getValue();
+                        for (int i = 1; i < hand.size() + 1; i++) {
+                            hands[counter][i] = hand.get(i - 1).getColor() + " " + hand.get(i - 1).getValue();
+                        }
+                        counter++;
+                    }
+
+                    // Send output
+                    debug.put(playerId, hands);
+                }
             }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
         }
+    }
+}
+
+class Server {
+    public static void main(String[] args) throws InterruptedException, IOException {
+        new GameHandler("gameId", new SequentialSpace(), new String[]{"Bob", "Alice"});
     }
 }
 
