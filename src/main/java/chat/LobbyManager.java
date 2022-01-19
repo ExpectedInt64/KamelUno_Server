@@ -1,5 +1,6 @@
 package chat;
 import game.GameHandler;
+import lombok.SneakyThrows;
 import org.jspace.*;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -52,7 +53,7 @@ public class LobbyManager implements Runnable {
                         if (the_lobby2 != null) {
                             System.out.println("The lobby is found sending URL");
                             int numOfPlayer = (int) the_lobby2[1];
-                            if (numOfPlayer < 4) {
+                            if (numOfPlayer <= 4) {
                                 lobbyURI = "tcp://127.0.0.1:9001/lobby" + the_lobby2[0] + "?keep";
                                 server_LobbyManager.put(requestType, requestArgument, "if");
                                 server_LobbyManager.put(requestType, requestArgument, "oklobby");
@@ -149,7 +150,12 @@ class lobbyWaiter implements Runnable {
                         listOfPlayers[i] = players.get(i);
                     }
                     //TODO: Kør gamehandler på en tråd
-                    //new GameHandler(spaceRepository, gameSpace,listOfPlayers);
+                    Thread thread = new Thread(){
+                        @SneakyThrows
+                        public void run(){
+                            new GameHandler(spaceRepository, gameSpace,listOfPlayers);
+                        }
+                    };thread.start();
 
                     for (String player : players) {
                         lobby.put(player, "System", "Go!","");
