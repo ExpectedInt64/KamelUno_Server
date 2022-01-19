@@ -149,7 +149,6 @@ class lobbyWaiter implements Runnable {
                     for (int i = 0; i < players.size(); i++) {
                         listOfPlayers[i] = players.get(i);
                     }
-                    //TODO: Kør gamehandler på en tråd
                     Thread thread = new Thread(){
                         @SneakyThrows
                         public void run(){
