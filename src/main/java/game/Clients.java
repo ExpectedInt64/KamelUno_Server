@@ -10,7 +10,8 @@ import java.util.Map;
 import java.util.Scanner;
 import java.util.concurrent.TimeUnit;
 
-public class Clients {}
+public class Clients {
+}
 
 class Mark {
     public static void main(String[] args) throws IOException, InterruptedException {
@@ -68,12 +69,40 @@ class Mikkel {
     }
 }
 
+class UNO {
+    public static void main(String[] args) throws IOException, InterruptedException {
+        RemoteSpace gameSpace = new RemoteSpace("tcp://localhost:31415/gameId?keep");
+        new startUNO(gameSpace);
+    }
+}
+
+class startUNO {
+
+    RemoteSpace gameSpace;
+    Scanner scanner = new Scanner(System.in);
+
+    public startUNO(RemoteSpace gameSpace) throws InterruptedException {
+
+        this.gameSpace = gameSpace;
+       while (true) {
+
+           // Commands:
+           // - playerId "UNO"
+           // - playerId "missingUNO"
+           String command = scanner.nextLine();
+           System.out.println(command);
+           gameSpace.put(command.split(" ")[0], command.split(" ")[1]);
+       }
+    }
+}
+
 class StartClient implements Runnable {
 
     RemoteSpace gameSpace;
     RemoteSpace debugSpace;
     SequentialSpace systemSpace;
     String playerId;
+    boolean gameDone = false;
     Scanner scanner = new Scanner(System.in);
 
     public StartClient(RemoteSpace gameSpace, RemoteSpace debugSpace, SequentialSpace systemSpace, String playerId) {
@@ -103,13 +132,11 @@ class StartClient implements Runnable {
             TimeUnit.SECONDS.sleep(1);
 
             // Threads to update TUI
-            Thread t1 = new Thread(new ClientBoard(playerId, gameSpace, systemSpace));
-            Thread t2 = new Thread(new ClientHand(playerId, gameSpace, systemSpace));
-            Thread t3 = new Thread(new TurnWatcher(playerId, gameSpace, systemSpace));
-
-            t1.start();
-            t2.start();
-            t3.start();
+            new Thread(new ClientBoard(playerId, gameSpace, systemSpace, this)).start();
+            new Thread(new ClientHand(playerId, gameSpace, systemSpace, this)).start();
+            new Thread(new TurnWatcher(playerId, gameSpace, systemSpace, this)).start();
+            new Thread(new ListenUNO(playerId, gameSpace, systemSpace, this)).start();
+            new Thread(new ListenMissingUNO(playerId, gameSpace, systemSpace, this)).start();
 
             TimeUnit.SECONDS.sleep(1);
 
@@ -130,9 +157,7 @@ class StartClient implements Runnable {
             while (true)
                 if (!takeTurn()) break;
 
-            t1.stop();
-            t2.stop();
-            t3.stop();
+            gameDone = true;
 
         } catch (InterruptedException e) {
             e.printStackTrace();
@@ -157,6 +182,8 @@ class StartClient implements Runnable {
             return false;
         }
 
+
+
         systemSpace.get(new ActualField("lock"));
         System.out.println("\nEnter to begin");
         systemSpace.put("lock");
@@ -168,7 +195,13 @@ class StartClient implements Runnable {
         // Do an action: Place or draw card
         doAction();
 
+        TimeUnit.SECONDS.sleep(1);
+
         // End turn
+        systemSpace.get(new ActualField("lock"));
+        System.out.println("\nEnter to end turn");
+        systemSpace.put("lock");
+        scanner.nextLine();
         gameSpace.put(playerId, "ended");
 
         return true;
@@ -228,17 +261,19 @@ class ClientBoard implements Runnable {
     String playerId;
     RemoteSpace gameSpace;
     SequentialSpace systemSpace;
+    StartClient startClient;
 
-    public ClientBoard(String playerId, RemoteSpace gameSpace, SequentialSpace systemSpace) {
+    public ClientBoard(String playerId, RemoteSpace gameSpace, SequentialSpace systemSpace, StartClient startClient) {
         this.playerId = playerId;
         this.gameSpace = gameSpace;
         this.systemSpace = systemSpace;
+        this.startClient = startClient;
     }
 
     @Override
     public void run() {
         try {
-            while (true) {
+            while (!startClient.gameDone) {
 
                 // Wait for signal
                 Board board = (Board) gameSpace.get(
@@ -274,17 +309,19 @@ class ClientHand implements Runnable {
     String playerId;
     RemoteSpace gameSpace;
     SequentialSpace systemSpace;
+    StartClient startClient;
 
-    public ClientHand(String playerId, RemoteSpace gameSpace, SequentialSpace systemSpace) {
+    public ClientHand(String playerId, RemoteSpace gameSpace, SequentialSpace systemSpace, StartClient startClient) {
         this.playerId = playerId;
         this.gameSpace = gameSpace;
         this.systemSpace = systemSpace;
+        this.startClient = startClient;
     }
 
     @Override
     public void run() {
         try {
-           while (true) {
+           while (!startClient.gameDone) {
 
                // Wait for signal
                Card[] hand = (Card[]) gameSpace.get(
@@ -319,17 +356,19 @@ class TurnWatcher implements Runnable {
     String playerId;
     RemoteSpace gameSpace;
     SequentialSpace systemSpace;
+    StartClient startClient;
 
-    public TurnWatcher(String playerId, RemoteSpace gameSpace, SequentialSpace systemSpace) {
+    public TurnWatcher(String playerId, RemoteSpace gameSpace, SequentialSpace systemSpace, StartClient startClient) {
         this.playerId = playerId;
         this.gameSpace = gameSpace;
         this.systemSpace = systemSpace;
+        this.startClient = startClient;
     }
 
     @Override
     public void run() {
         try {
-            while (true) {
+            while (!startClient.gameDone) {
                 String player = (String) gameSpace.get(
                         new ActualField(playerId),
                         new ActualField("takes"),
@@ -349,6 +388,89 @@ class TurnWatcher implements Runnable {
                 }
             }
 
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+class ListenUNO implements Runnable{
+
+    String playerId;
+    RemoteSpace gameSpace;
+    SequentialSpace systemSpace;
+    StartClient startClient;
+
+    public ListenUNO(String playerId, RemoteSpace gameSpace, SequentialSpace systemSpace, StartClient startClient) {
+        this.playerId = playerId;
+        this.gameSpace = gameSpace;
+        this.systemSpace = systemSpace;
+        this.startClient = startClient;
+    }
+
+    @Override
+    public void run() {
+        try {
+            while (!startClient.gameDone) {
+
+                // Wait for signal
+                String caller = (String) gameSpace.get(
+                        new ActualField(playerId),
+                        new ActualField("UNO"),
+                        new FormalField(String.class)
+                )[2];
+
+                // TUI
+                systemSpace.get(new ActualField("lock"));
+                if (caller.equals(playerId)) System.out.println("\nYou called UNO");
+                else System.out.println("\n" + caller + " called UNO");
+                System.out.flush();
+                systemSpace.put("lock");
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+class ListenMissingUNO implements Runnable{
+
+    String playerId;
+    RemoteSpace gameSpace;
+    SequentialSpace systemSpace;
+    StartClient startClient;
+
+    public ListenMissingUNO(String playerId, RemoteSpace gameSpace, SequentialSpace systemSpace, StartClient startClient) {
+        this.playerId = playerId;
+        this.gameSpace = gameSpace;
+        this.systemSpace = systemSpace;
+        this.startClient = startClient;
+    }
+
+    @Override
+    public void run() {
+        try {
+            while (!startClient.gameDone) {
+
+                // Wait for signal
+                Object[] msg = gameSpace.get(
+                        new ActualField(playerId),
+                        new ActualField("UNO"),
+                        new FormalField(String.class),
+                        new FormalField(String.class)
+                );
+
+                String receiver = (String) msg[2];
+                String caller = (String) msg[3];
+
+                // TUI
+                systemSpace.get(new ActualField("lock"));
+                if (receiver.equals(playerId)) System.out.println("\n" + caller + " called missing UNO on you");
+                else if (caller.equals(playerId)) System.out.println("\n You called missing UNO on " + receiver);
+                else System.out.println("\n" + caller + " called missing UNO on " + receiver);
+                System.out.flush();
+                systemSpace.put("lock");
+            }
         } catch (InterruptedException e) {
             e.printStackTrace();
         }

@@ -9,7 +9,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /*
-General template: ("playerId", "command", "payload")
+General template: (playerId, "command", payload)
 
 SERVER TO CLIENT COMMANDS
 - (playerId, "allReady"): All players are ready to play
@@ -20,7 +20,7 @@ SERVER TO CLIENT COMMANDS
 - (playerId, "invalid"): The played card was invalid
 - (playerId, "success": The request was successful
 - (playerId, "board", Board): The board was updated
-- (playerId, "UNO", receiver, giver): A missing UNO was applied to receiver by giver
+- (playerId, "UNO", receiver, caller): A missing UNO was applied from receiver to caller
 - (playerId, "UNO", caller): The caller successfully called UNO
 
 
@@ -52,6 +52,7 @@ public class GameHandler {
     boolean skipNextPlayer = false;  // True if a skip card has been played and the next player should be skipped
     int penalty = 0;  // The amount of penalty the next player is going to receive
     boolean turnDone = false;  // A player only gets one action per turn (draw or play a card)
+    boolean gameDone = false;  // False until a winner is found
 
     // Constructor
     public GameHandler(SpaceRepository gameRepository, SequentialSpace gameSpace, String[] playerIds) throws InterruptedException {
@@ -110,12 +111,12 @@ public class GameHandler {
         // Provide players with cards
         for (int i = 0; i < playerIds.length; i++) {
             hands.put(playerIds[i], new ArrayList<>());
-            givePlayerCards(playerIds[i], 7);
+            givePlayerCards(playerIds[i], 2);
         }
 
         // Send the board to all the players to display
         sendBoard();
-        
+
         // Send the player list to all the players
         sendPlayerList();
 
@@ -131,6 +132,37 @@ public class GameHandler {
 
         // Notify first player to start
         gameSpace.put(playerIds[currentPlayer], "take", "alive");
+
+        startUnoThreads();
+    }
+
+    private void startUnoThreads() {
+
+        // Start to listen for UNO
+        Thread unoThread = new Thread() {
+            public void run() {
+                while (!gameDone) {
+                    try {
+                        checkUno();
+                    } catch (InterruptedException e) { e.printStackTrace(); }
+                }
+            }
+        };
+
+        unoThread.start();
+
+        // Start to listen for missing UNO
+        Thread missingUnoThread = new Thread() {
+            public void run() {
+                while (!gameDone) {
+                    try {
+                        checkMissingUno();
+                    } catch (InterruptedException e) { e.printStackTrace(); }
+                }
+            }
+        };
+
+        missingUnoThread.start();
     }
 
     private void sendPlayerList() throws InterruptedException {
@@ -153,6 +185,8 @@ public class GameHandler {
 
             nextPlayer();
         }
+
+        gameDone = true;
     }
 
     private boolean isGameDone() throws InterruptedException {
@@ -274,10 +308,10 @@ public class GameHandler {
 
             if (!reverse) currentPlayer = (currentPlayer + increment) % playerIds.length;
             if (reverse) currentPlayer = ((currentPlayer - increment) + playerIds.length) % playerIds.length;
-        });
 
-        // Enable move for next player
-        turnDone = false;
+            // Enable move for next player
+            turnDone = false;
+        });
 
         // Notify next player to start
         gameSpace.put(playerIds[currentPlayer], "take", "alive");
@@ -490,32 +524,44 @@ public class GameHandler {
     }
 
     // Allow a player to call UNO while playing
-    private void callUno() throws InterruptedException {
+    private void checkUno() throws InterruptedException {
 
         String playerId = (String) gameSpace.get(
                 new FormalField(String.class),
                 new ActualField("UNO")
-        )[1];
+        )[0];
 
-        // Check playerId
-        if (!isCurrentPlayer(playerId)) return;
+        mutualExclusion(() -> {
+            // Check playerId
+            if (!isCurrentPlayer(playerId)) return;
 
-        // Check turn is done
-        if (!turnDone) return;
+            // Check turn is done
+            if (!turnDone) return;
 
-        UNO = true;
+            // Check UNO is not already called
+            if (UNO) return;
 
-        // Notify players UNO was called successfully
-        for (int i = 0; i < playerIds.length; i++) {
-            gameSpace.put(playerIds[i], "UNO", playerId);
-        }
+            // Check there is indeed UNO
+            if (!isUNO(playerId)) return;
+
+            UNO = true;
+
+            // Notify players UNO was called successfully
+            for (int i = 0; i < playerIds.length; i++) {
+                gameSpace.put(playerIds[i], "UNO", playerId);
+            }
+        });
     }
 
-    private void callMissingUno() throws InterruptedException {
+    private boolean isUNO(String playerId) {
+        return hands.get(playerId).size() == 1;
+    }
+
+    private void checkMissingUno() throws InterruptedException {
         String playerId = (String) gameSpace.get(
                 new FormalField(String.class),
                 new ActualField("missingUNO")
-        )[1];
+        )[0];
 
         mutualExclusion(() -> {
             if (missingUNO) {
@@ -531,8 +577,9 @@ public class GameHandler {
                     gameSpace.put(
                             playerIds[i],
                             "UNO",
-                            playerId,
-                            playerIds[previousPlayer]
+                            playerIds[previousPlayer],
+                            playerId
+
                     );
                 }
 
@@ -681,7 +728,7 @@ class Server {
         SequentialSpace gameSpace = new SequentialSpace();
         spaceRepository.add("gameId", gameSpace);
 
-        new GameHandler(spaceRepository, gameSpace, new String[]{"Mark", "Talha", "Volkan", "Mikkel"});
+        new GameHandler(spaceRepository, gameSpace, new String[]{"Mark", "Talha", "Volkan"}); // , "Volkan", "Mikkel"
     }
 }
 
