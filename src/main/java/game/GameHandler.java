@@ -246,11 +246,12 @@ public class GameHandler {
         Object[] request = gameSpace.get(
                 new FormalField(String.class),
                 new ActualField("action"),
-                new FormalField(Action.class)
+                new FormalField(String.class)  // was new FormalField(Action.class)
         );
+        Gson gson = new Gson();
 
         String playerId = (String) request[0];
-        Action action = (Action) request[2];
+        Action action = gson.fromJson((String) request[2],Action.class); // was Action action = (Action) request[2];
 
         // The current player can only do one action per turn and only
         if (turnDone || !isCurrentPlayer(playerId)) {
@@ -393,7 +394,7 @@ public class GameHandler {
         Gson gson = new Gson();
         // Send the new board and the players' hand to everyone
         for (int i = 0; i < playerIds.length; i++) {
-            gameSpace.put(playerIds[i], "board", board);
+            gameSpace.put(playerIds[i], "board", gson.toJson(board)); // was gameSpace.put(playerIds[i], "board", board);
             gameSpace.put(playerIds[i], "cards", gson.toJson(arraylistToArray(hands.get(playerIds[i]))));
             System.out.printf("Player,cards,%s\n",gson.toJson(arraylistToArray(hands.get(playerIds[i]))));
             //gameSpace.put(playerIds[i], "cards", "Test");
@@ -415,7 +416,7 @@ public class GameHandler {
     // Allow a player to draw a random card from the deck
     // Returns true with success
     private boolean drawACard(String playerId) throws InterruptedException {
-
+        Gson gson = new Gson();
         // Only allow a player to draw a card if the player has no valid moves
         if (playerHasMoves(playerId)) {
             gameSpace.put(playerId, "invalid");
@@ -425,7 +426,7 @@ public class GameHandler {
         Card card = getRandomCardFromDeck();
 
         // Send card to player
-        gameSpace.put(playerId, "card", card);
+        gameSpace.put(playerId, "card", gson.toJson(card)); // was gameSpace.put(playerId, "card", card);
 
         // Add card to player's hand
         hands.get(playerId).add(card);
@@ -637,6 +638,9 @@ class Action {
     public Action(Actions action, Card card) {
         this.action = action;
         this.card = card;
+    }
+    public Action(){
+
     }
 
     public Actions getAction() { return action; }
