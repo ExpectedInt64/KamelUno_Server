@@ -174,6 +174,7 @@ class StartClient implements Runnable {
                 new FormalField(String.class)
         )[2];
 
+
         //Check if game is done
         if (!status.equals("alive")) {
             systemSpace.get(new ActualField("lock"));

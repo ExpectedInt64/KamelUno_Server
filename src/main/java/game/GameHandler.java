@@ -112,7 +112,7 @@ public class GameHandler {
         // Provide players with cards
         for (int i = 0; i < playerIds.length; i++) {
             hands.put(playerIds[i], new ArrayList<>());
-            givePlayerCards(playerIds[i], 2);
+            givePlayerCards(playerIds[i], 3);
         }
 
         // Send the board to all the players to display
@@ -213,7 +213,8 @@ public class GameHandler {
         // Wait for player to take turn
         String playerId = (String) gameSpace.get(
                 new FormalField(String.class),
-                new ActualField("taken")
+                new ActualField("taken"),
+                new ActualField("!")
         )[0];
 
         // Check playerId
@@ -223,6 +224,7 @@ public class GameHandler {
         for (int i = 0; i < playerIds.length; i++) {
             gameSpace.put(playerIds[i], "takes", playerId);
         }
+        System.out.printf("Player:%s ",playerId);
 
         mutualExclusion(() -> {
             // Apply penalty if any
@@ -252,6 +254,8 @@ public class GameHandler {
 
         String playerId = (String) request[0];
         Action action = gson.fromJson((String) request[2],Action.class); // was Action action = (Action) request[2];
+
+        System.out.println("action acitvated " +action.getAction());
 
         // The current player can only do one action per turn and only
         if (turnDone || !isCurrentPlayer(playerId)) {
