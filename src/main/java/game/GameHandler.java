@@ -112,7 +112,7 @@ public class GameHandler {
         // Provide players with cards
         for (int i = 0; i < playerIds.length; i++) {
             hands.put(playerIds[i], new ArrayList<>());
-            givePlayerCards(playerIds[i], 3);
+            givePlayerCards(playerIds[i], 7);
         }
 
         // Send the board to all the players to display
@@ -558,6 +558,7 @@ public class GameHandler {
             for (int i = 0; i < playerIds.length; i++) {
                 gameSpace.put(playerIds[i], "UNO", playerId);
             }
+            System.out.printf("UNO called by: %s\n",playerId);
         });
     }
 
@@ -590,6 +591,7 @@ public class GameHandler {
 
                     );
                 }
+                System.out.printf("Missing UNO called by: %s on: %s\n",playerId, playerIds[previousPlayer]);
 
                 TimeUnit.SECONDS.sleep(1);
                 sendBoard();
