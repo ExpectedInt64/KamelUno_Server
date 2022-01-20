@@ -142,24 +142,28 @@ class lobbyWaiter implements Runnable {
 
                 } else if(msg1.equals("initGame")){
 
-                    System.out.println("Lobby" + lobbyID + ": initGame requested. Starting gameHandler in a thread.");
-                    SequentialSpace gameSpace = new SequentialSpace();
-                    spaceRepository.add("game"+lobbyID,gameSpace);
-                    String[] listOfPlayers = new String[players.size()];
-                    for (int i = 0; i < players.size(); i++) {
-                        listOfPlayers[i] = players.get(i);
-                    }
-                    Thread thread = new Thread(){
-                        @SneakyThrows
-                        public void run(){
-                            new GameHandler(spaceRepository, gameSpace,listOfPlayers);
+                    System.out.println("Lobby" + lobbyID + ": initGame requested.");
+                    if(players.size() < 4){
+                        System.out.println("Initgame stopped due to player count.");
+                    }else {
+                        SequentialSpace gameSpace = new SequentialSpace();
+                        spaceRepository.add("game" + lobbyID, gameSpace);
+                        String[] listOfPlayers = new String[players.size()];
+                        for (int i = 0; i < players.size(); i++) {
+                            listOfPlayers[i] = players.get(i);
                         }
-                    };thread.start();
+                        Thread thread = new Thread() {
+                            @SneakyThrows
+                            public void run() {
+                                new GameHandler(spaceRepository, gameSpace, listOfPlayers);
+                            }
+                        };
+                        thread.start();
 
-                    for (String player : players) {
-                        lobby.put(player, "System", "Go!","");
+                        for (String player : players) {
+                            lobby.put(player, "System", "Go!", "");
+                        }
                     }
-
                 } else {
                     System.out.println("Lobby" + lobbyID + ": " + t[0] + ":" + t[1]);
                     for (String player : players) {
