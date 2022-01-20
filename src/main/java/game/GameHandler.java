@@ -6,9 +6,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
-
-// todo the players should always listen for a missing UNO penalty
-// todo only begin when all players are ready
+import java.util.concurrent.TimeUnit;
 
 /*
 General template: ("playerId", "command", "payload")
@@ -17,11 +15,13 @@ SERVER TO CLIENT COMMANDS
 - (playerId, "allReady"): All players are ready to play
 - (playerId, "take", status): The player can take his turn, status tell if the game is done (winnerId or "alive")
 - (playerId, "players", String[]): A list of all the players in the correct game order
-- (playerId, "takes", playerId): A new player [1] has begun his turn
+- (playerId, "takes", newPlayer): newPlayer (id) has begun his turn
 - (playerId, "cards", Card[]): An array of card is ready for the player to draw
 - (playerId, "invalid"): The played card was invalid
-- (playerId, "success": The card was played successfully
+- (playerId, "success": The request was successful
 - (playerId, "board", Board): The board was updated
+- (playerId, "UNO", receiver, giver): A missing UNO was applied to receiver by giver
+- (playerId, "UNO", caller): The caller successfully called UNO
 
 
 CLIENT TO SERVER COMMANDS
@@ -29,8 +29,9 @@ CLIENT TO SERVER COMMANDS
 - (playerId, "ended"): The players ends his turn
 - (playerId, "taken"): The players takes his turn
 - (playerId, "action", Action): The player performs an action (play or draw card)
+- (playerId, "UNO"): The player call UNO
+- (playerId, "missingUNO"): A player calls missing UNO on someone else
  */
-
 
 // Given a game-space this class handles it for the players
 public class GameHandler {
@@ -38,17 +39,19 @@ public class GameHandler {
     SpaceRepository gameRepository; // The repository through which the players communicate
     SequentialSpace gameSpace; // The space through which the players communicate
 
-    String[] playerIds;  // List of all the player's ids
     int currentPlayer = 0;  // The index of the current player to take turn
     int previousPlayer;  // The index of the last player to take turn
+    boolean missingUNO = false;  // True if the last player forgot to say UNO until the next player takes action
+    boolean UNO = false;  // True if the player says UNO
+    Map<String, ArrayList<Card>> hands = new HashMap<>();  // To keep track of what cards each player has on his hand
+
+    String[] playerIds;  // List of all the player's ids
     RandomSpace deck = new RandomSpace();  // The deck from which the players can draw cards
     StackSpace stack = new StackSpace();  // The stack in which the players place their cards. Top card is available with a queryp
     boolean reverse = false;  // True if the order in which the players take turn should be reversed
-    boolean missingUNO = false;  // True if the last player forgot to say UNO
     boolean skipNextPlayer = false;  // True if a skip card has been played and the next player should be skipped
     int penalty = 0;  // The amount of penalty the next player is going to receive
     boolean turnDone = false;  // A player only gets one action per turn (draw or play a card)
-    Map<String, ArrayList<Card>> hands = new HashMap<>();  // To keep track of what cards each player has on his hand
 
     // Constructor
     public GameHandler(SpaceRepository gameRepository, SequentialSpace gameSpace, String[] playerIds) throws InterruptedException {
@@ -186,13 +189,16 @@ public class GameHandler {
             gameSpace.put(playerIds[i], "takes", playerId);
         }
 
-        // Apply penalty if any
-        if (penalty > 0) {
-            givePlayerCards(playerId, penalty);
-            penalty = 0;
+        mutualExclusion(() -> {
+            // Apply penalty if any
+            if (penalty > 0) {
+                givePlayerCards(playerId, penalty);
+                penalty = 0;
 
-            sendBoard();
-        }
+                sendBoard();
+            }
+        });
+
     }
 
     // Allow a player to take actions (draw or play a card)
@@ -217,6 +223,11 @@ public class GameHandler {
             return false;
         };
 
+        // Make sure missing UNO is false before continuing to avoid race conditions
+        mutualExclusion(() -> {
+            missingUNO = false;
+        });
+
         // If a card was played
         if (action.getAction().equals(Actions.PLAY))
             success = playACard(playerId, action.getCard());
@@ -240,21 +251,30 @@ public class GameHandler {
         // Wait for the current player to end his turn
         String playerId = (String) gameSpace.get(new FormalField(String.class), new ActualField("ended"))[0];
 
-        // Check playerId
-        if (!isCurrentPlayer(playerId)) return;
+        mutualExclusion(() -> {
+            // Check for missing UNO
+            if (hands.get(playerIds[currentPlayer]).size() == 1 && UNO == false)
+                missingUNO = true;
 
-        // Update previous player
-        previousPlayer = currentPlayer;
+            // Reset UNO
+            UNO = false;
 
-        // Update current player
-        int increment = 1;
-        if (skipNextPlayer) {
-            increment++;
-            skipNextPlayer = false;
-        }
+            // Check playerId
+            if (!isCurrentPlayer(playerId)) return;
 
-        if (!reverse) currentPlayer = (currentPlayer + increment) % playerIds.length;
-        if (reverse) currentPlayer = ((currentPlayer - increment) + playerIds.length) % playerIds.length;
+            // Update previous player
+            previousPlayer = currentPlayer;
+
+            // Update current player
+            int increment = 1;
+            if (skipNextPlayer) {
+                increment++;
+                skipNextPlayer = false;
+            }
+
+            if (!reverse) currentPlayer = (currentPlayer + increment) % playerIds.length;
+            if (reverse) currentPlayer = ((currentPlayer - increment) + playerIds.length) % playerIds.length;
+        });
 
         // Enable move for next player
         turnDone = false;
@@ -279,11 +299,6 @@ public class GameHandler {
         // Remove the card from the players hand
         removeCardFromPlayer(playerId, card);
 
-        // Reset missing UNO
-        mutualExclusion(() -> {
-            missingUNO = false;
-        });
-
         // If reverse
         if (card.value.equals("Reverse")) reverse = !reverse;
 
@@ -302,6 +317,7 @@ public class GameHandler {
 
         // Respond with success
         gameSpace.put(playerId, "success");
+
         return true;
     }
 
@@ -374,7 +390,7 @@ public class GameHandler {
         // Send card to player
         gameSpace.put(playerId, "card", card);
 
-        // Add card to players hans
+        // Add card to player's hand
         hands.get(playerId).add(card);
 
         // Notify other players of change
@@ -397,7 +413,7 @@ public class GameHandler {
         return false;
     }
 
-    // Sends a certain amount of random cards to a player drawn from the deck
+    // Assigns a certain amount of random cards to a player drawn from the deck
     private void givePlayerCards(String playerId, int numberOfCards) throws InterruptedException {
         Card[] cards = new Card[numberOfCards];
 
@@ -458,17 +474,6 @@ public class GameHandler {
         return (Card) stack.queryp(new FormalField(Card.class))[0];
     }
 
-    // Only one at a time is allowed access to the gameSpace through mutualExclusion
-    private void mutualExclusion(Callable callable) throws InterruptedException {
-        gameSpace.get(new ActualField("lock"));
-        callable.call();
-        gameSpace.put("lock");
-    }
-
-    interface Callable {
-        public void call();
-    }
-
     // If there are no more cards in the deck, the stack needs to be added back
     private void flipTheStack() throws InterruptedException {
 
@@ -484,8 +489,69 @@ public class GameHandler {
         stack.put(topCard);
     }
 
-    // todo Call UNO
-    // todo Call missing UNO (apply penalty)
+    // Allow a player to call UNO while playing
+    private void callUno() throws InterruptedException {
+
+        String playerId = (String) gameSpace.get(
+                new FormalField(String.class),
+                new ActualField("UNO")
+        )[1];
+
+        // Check playerId
+        if (!isCurrentPlayer(playerId)) return;
+
+        // Check turn is done
+        if (!turnDone) return;
+
+        UNO = true;
+
+        // Notify players UNO was called successfully
+        for (int i = 0; i < playerIds.length; i++) {
+            gameSpace.put(playerIds[i], "UNO", playerId);
+        }
+    }
+
+    private void callMissingUno() throws InterruptedException {
+        String playerId = (String) gameSpace.get(
+                new FormalField(String.class),
+                new ActualField("missingUNO")
+        )[1];
+
+        mutualExclusion(() -> {
+            if (missingUNO) {
+
+                // Punish previous players
+                givePlayerCards(playerIds[previousPlayer], 1);
+
+                // Reset missing UNO
+                missingUNO = false;
+
+                // Notify players
+                for (int i = 0; i < playerIds.length; i++) {
+                    gameSpace.put(
+                            playerIds[i],
+                            "UNO",
+                            playerId,
+                            playerIds[previousPlayer]
+                    );
+                }
+
+                TimeUnit.SECONDS.sleep(1);
+                sendBoard();
+            }
+        });
+    }
+
+    // Only one at a time is allowed access to the gameSpace through mutualExclusion
+    private void mutualExclusion(Callable callable) throws InterruptedException {
+        gameSpace.get(new ActualField("lock"));
+        callable.call();
+        gameSpace.put("lock");
+    }
+
+    interface Callable {
+        public void call() throws InterruptedException;
+    }
 }
 
 // A template for a single card in the deck
