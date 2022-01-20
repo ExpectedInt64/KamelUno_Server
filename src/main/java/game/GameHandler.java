@@ -1,5 +1,6 @@
 package game;
 
+import com.google.gson.Gson;
 import org.jspace.*;
 
 import java.io.IOException;
@@ -339,11 +340,13 @@ public class GameHandler {
     // Send the board to all the players
     private void sendBoard() throws InterruptedException {
         Board board = getBoard();
-
+        Gson gson = new Gson();
         // Send the new board and the players' hand to everyone
         for (int i = 0; i < playerIds.length; i++) {
             gameSpace.put(playerIds[i], "board", board);
-            gameSpace.put(playerIds[i], "cards", arraylistToArray(hands.get(playerIds[i])));
+            gameSpace.put(playerIds[i], "cards", gson.toJson(arraylistToArray(hands.get(playerIds[i]))));
+            System.out.printf("Player,cards,%s\n",gson.toJson(arraylistToArray(hands.get(playerIds[i]))));
+            //gameSpace.put(playerIds[i], "cards", "Test");
         }
     }
 
